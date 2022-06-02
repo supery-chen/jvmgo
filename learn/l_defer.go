@@ -18,6 +18,7 @@ func main() {
 func test(t time.Time) {
 	fmt.Println("call test")
 	fmt.Printf("test:%s,%s\n", t, time.Now())
+	fmt.Printf("test1:%s\n", time.Since(t))
 	ret := time.Now().Sub(t)
 	fmt.Printf("test2:%s\n", ret)
 }
