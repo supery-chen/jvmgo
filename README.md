@@ -274,4 +274,91 @@ panic:
 
 ##### 失效的崩溃恢复
 
+初学Go语言的读者可能会写出下面的代码, 在主程序中调用`recover`试图中止程序的崩溃, 但是从运行的结果中我们也能看出, 下面的程序没有正常退出
 
+```go
+func main() {
+	defer fmt.Println("in main")
+	if err := recover(); err != nil {
+		fmt.Println(err)
+	}
+
+	panic("unknown err")
+}
+```
+
+运行结果如下
+
+```shell
+$ go run main.go
+in main
+panic: unknown err
+
+goroutine 1 [running]:
+main.main()
+	...
+exit status 2
+```
+
+仔细分析一下这个过程就能理解这种现象背后的原因, `recover`只有在发生`panic`之后调用才会生效. 然而在上面的控制流中, `recover`关键字是在`panic`之前调用的, 并不满足生效的条件, 所以我们需要在`defer`中使用`recover`关键字
+
+##### 嵌套崩溃
+
+Go语言中的`panic`是可以多次嵌套调用的. 一些熟悉Go语言的读者很可能也不知道这个知识点, 如下所示的代码就展示了如何在`defer`函数中多次调用`panic`
+
+```go
+func main() {
+	defer fmt.Println("in main")
+	defer func() {
+		defer func() {
+			panic("panic again and again)
+		}()
+		panic("panic again)
+	}()
+
+	panic("panic once)
+}
+```
+
+运行结果如下
+
+```shell
+$ go run main.go
+in main
+panic: panic once
+	panic: panic again
+	panic: panic again and again
+
+goroutine 1 [running]:
+...
+exit status 2
+```
+
+从上述程序输出的结果, 我们可以确定程序多次调用`panic`也不会影响`defer`函数的正常运行, 所以使用`defer`进行收尾工作一般来说都是安全的
+
+#### 2.数据结构
+
+`panic`关键字在Go语言的源代码是由数据结构`runtime._panic`表示的. 每当我们调用`panic`都会创建一个如下所示的数据结构存储相关信息
+
+```go
+type _panic struct {
+	argp      unsafe.Pointer
+	arg       interface{}
+	link      *_panic
+	recovered bool
+	aborted   bool
+	pc        uintptr
+	sp        unsafe.Pointer
+	goexit    bool
+}
+```
+
+1. `argp`是指向`defer`调用时参数的指针
+2. `arg`是调用`panic`时传入的参数
+3. `link`指向了更早调用的`runtime._panic`结构
+4. `recovered`表示当前`runtime._panic`是否被`recover`恢复
+5. `aborted`表示当前的`panic`是否被强行终止
+
+从数据结构中的`link`字段我们就可以推测出以下的结论: `panic`函数可以被连续多次调用, 它们之间通过`link`可以组成链表
+
+结构体中`pc`, `sp` 和 `goexit` 三个字段都是为了修复`runtime.Goexit`带来的问题引入的. `runtime.Goexit`能够只结束调用该函数的Goroutine而不影响其他的Goroutine, 但是该函数会被`defer`中的`panic`和`recover`取消, 引入这三个字段就是为了保证该函数一定会生效

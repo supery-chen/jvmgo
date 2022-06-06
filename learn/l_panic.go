@@ -1,13 +1,15 @@
 package main
 
-import "time"
+import "fmt"
 
 func main() {
-	defer println("in main")
-	go func() {
-		defer println("in goroutine")
-		panic("")
+	defer fmt.Println("in main")
+	defer func() {
+		defer func() {
+			panic("panic again and again")
+		}()
+		panic("panic again")
 	}()
 
-	time.Sleep(1 * time.Second)
+	panic("panic once")
 }
